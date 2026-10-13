@@ -58,6 +58,7 @@ docker image prune
 - `app/brain.py`: brain agent with dynamic instructions (prompt + workspace views).
 - `app/voice.py`: voice agent that turns plain messages into Matey's lines.
 - `app/tts.py`: optional ElevenLabs text-to-speech that reads those lines aloud. Off when `ELEVENLABS_API_KEY` is blank.
+- `app/stt.py`: optional ElevenLabs speech-to-text for the microphone button. Off when `ELEVENLABS_API_KEY` is blank.
 - `app/tools.py`: function tools the brain can call.
 - `app/hooks.py`: `RunHooks` that feed the activity panel.
 - `app/workspace.py`: plain-Python state of the on-screen windows. No AI here.
@@ -76,6 +77,7 @@ docker image prune
 - **Two workspace views, not one live snapshot.** The brain sees the workspace frozen at the start of the turn plus a log of changes it made this turn (`changes_this_turn`). A single live snapshot made the model think items it had just added "already existed". Don't revert to a live snapshot.
 - **Tracing.** Each user turn is wrapped in `with trace(...)` with `group_id` set to the conversation id. Voice-agent runs nest inside the same trace. Keep this when changing `conversation.py`. `OPENAI_AGENTS_DISABLE_TRACING=true` turns it off.
 - **Spoken voice is optional.** With no `ELEVENLABS_API_KEY`, `build_tts()` returns `None` and nothing ElevenLabs-related runs. Every `say` event goes through `MateyContext.deliver_line`, which adds audio when TTS is on and falls back to text only if TTS fails.
+- **Voice input is optional too.** With no key, `build_stt()` returns `None`, `hello.transcription` is `null` and the browser hides the mic. A recording is transcribed by `Conversation.handle_voice_message`, then runs through `handle_user_message` like typed text, so the brain never knows the request was spoken.
 - **The browser paces speech.** `app.js` queues lines and shows one at a time: until its audio ends, or for a minimum reading time when there is no audio. Audio plays through one shared Web Audio context, woken on Send and kept running while Matey works. A fresh `<audio>` element per line made the first line fade in as the output device woke from idle.
 - **Batch list edits.** `add_list_items` and `remove_list_items` take lists, so one call per list, never one per item.
 - **No front-end build step.** Plain ES modules, no framework, no bundler. Only external resource: Google Fonts.
@@ -105,9 +107,12 @@ docker image prune
 
 ## WebSocket protocol
 
-- Browser to server: `{"type": "user_message", "text": "..."}`
+- Browser to server:
+  - `{"type": "user_message", "text": "..."}`
+  - `{"type": "voice_message", "audio": "<base64>", "mime": "audio/webm"}`: a recording from the mic (max 10 MB).
 - Server to browser:
-  - `hello`: version, model names and `speech` (the TTS label, or `null` when the voice is off).
+  - `hello`: version, model names, `speech` (the TTS label, or `null` when the voice is off) and `transcription` (the STT label, or `null` when voice input is off).
+  - `transcript`: `text` heard in a `voice_message`, sent before that turn starts.
   - `status`: `state` of `thinking` or `idle`.
   - `say`: `text` (Matey's line), `plain` (the brain's message) and, when the voice is on, `audio` (base64 MP3).
   - `ui`: `op` of `upsert` (with `component`) or `delete` (with `component_id`).
@@ -130,4 +135,5 @@ docker image prune
 - Some models reject `reasoning.effort`. Leave `*_REASONING_EFFORT` blank if a model errors.
 - The CSS has `[hidden] { display: none !important; }` because component `display` rules otherwise override the `hidden` attribute.
 - `/favicon.ico` needs its explicit route in `main.py`.
+- Browsers only allow `getUserMedia` (the mic) on `localhost` or HTTPS. Over plain HTTP from another host, the mic button stays hidden.
 - Small models follow prompt constraint language very literally. Phrasing like "rewrite only this line" flattens Matey's personality.

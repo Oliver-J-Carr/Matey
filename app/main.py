@@ -8,6 +8,8 @@ status changes, Matey's lines, window updates and activity-feed entries.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import logging
 from pathlib import Path
 
@@ -21,6 +23,9 @@ from .conversation import Conversation
 
 log = logging.getLogger("matey")
 STATIC = Path(__file__).parent / "static"
+# Largest spoken request accepted. The browser stops recording after 30 s,
+# which is far smaller; this only guards against oversized messages.
+MAX_VOICE_BYTES = 10 * 1024 * 1024
 
 app = FastAPI(title="Matey", version=__version__)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -55,6 +60,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
         "brain_model": settings.brain_model,
         "voice_model": settings.voice_model,
         "speech": convo.ctx.tts.label if convo.ctx.tts else None,
+        "transcription": convo.stt.label if convo.stt else None,
     })
 
     turn: asyncio.Task | None = None
@@ -64,8 +70,26 @@ async def ws_endpoint(ws: WebSocket) -> None:
             if msg.get("type") == "user_message":
                 # Run the turn in the background so this loop keeps listening.
                 turn = asyncio.create_task(convo.handle_user_message(str(msg.get("text", ""))))
+            elif msg.get("type") == "voice_message":
+                audio = _decode_voice(msg.get("audio"))
+                if audio is None:
+                    await send({"type": "error", "text": "That recording couldn't be read."})
+                    await send({"type": "turn_end"})
+                    continue
+                turn = asyncio.create_task(convo.handle_voice_message(audio, str(msg.get("mime") or "audio/webm")))
     except WebSocketDisconnect:
         log.info("client disconnected: %s", convo.id)
     finally:
         if turn and not turn.done():
             turn.cancel()
+
+
+def _decode_voice(data) -> bytes | None:
+    """The recording's bytes, or None if missing, malformed or too big."""
+    if not isinstance(data, str) or not data:
+        return None
+    try:
+        audio = base64.b64decode(data, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    return audio if 0 < len(audio) <= MAX_VOICE_BYTES else None

@@ -1,7 +1,7 @@
 services:
   matey:
     build: .
-    image: matey:0.2.0
+    image: matey:0.3.0
     container_name: matey
     env_file: .env
     ports:

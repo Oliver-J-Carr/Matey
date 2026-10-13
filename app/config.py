@@ -28,6 +28,8 @@ class Settings:
     elevenlabs_model: str = _env("ELEVENLABS_MODEL", "eleven_v4_turbo")
     # Speaking speed: 1.0 is normal, ElevenLabs allows 0.7 (slower) to 1.2 (faster).
     elevenlabs_speed: float = float(_env("ELEVENLABS_SPEED", "1.1"))
+    # Spoken requests (ElevenLabs speech-to-text). Uses the same key; blank = no microphone.
+    elevenlabs_stt_model: str = _env("ELEVENLABS_STT_MODEL", "scribe_v2")
 
 
 settings = Settings()

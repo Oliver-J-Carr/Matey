@@ -23,6 +23,7 @@ set_tracing_disabled(True)
 def no_real_tts(monkeypatch):
     # Hermetic: never build a real ElevenLabs client, even if the key is set.
     monkeypatch.setattr("app.conversation.build_tts", lambda: None)
+    monkeypatch.setattr("app.conversation.build_stt", lambda: None)
 
 
 class FakeTTS:
@@ -39,11 +40,29 @@ class FakeTTS:
         return b"mp3:" + text.encode()
 
 
+class FakeSTT:
+    """Stands in for ElevenLabsSTT: 'hears' a set phrase, or raises."""
+    model = "fake-stt"
+    label = "Fake STT"
+
+    def __init__(self, text="", fail=None):
+        self.text = text
+        self.fail = fail
+        self.heard = []  # (audio, mime) for each call
+
+    async def transcribe(self, audio, mime):
+        self.heard.append((audio, mime))
+        if self.fail:
+            raise self.fail
+        return self.text
+
+
 def _call(name, args, cid):
     return function_call(name, args, call_id=cid)
 
 
-def run_turns(brain_steps, voice_lines, messages, tts=None):
+def run_turns(brain_steps, voice_lines, messages, tts=None, stt=None):
+    """A str message is typed; a bytes message is a spoken recording."""
     events = []
 
     async def send(event):
@@ -55,9 +74,13 @@ def run_turns(brain_steps, voice_lines, messages, tts=None):
             brain_model=ScriptedModel(brain_steps),
             voice_model=ScriptedModel([[assistant_message(t)] for t in voice_lines]),
             tts=tts,
+            stt=stt,
         )
         for m in messages:
-            await convo.handle_user_message(m)
+            if isinstance(m, bytes):
+                await convo.handle_voice_message(m, "audio/webm")
+            else:
+                await convo.handle_user_message(m)
         return convo
 
     convo = asyncio.run(go())
@@ -230,3 +253,97 @@ def test_elevenlabs_request_asks_for_the_configured_speed():
 
     asyncio.run(go(1.0))  # normal speed: leave the voice's own settings alone
     assert "voice_settings" not in json.loads(sent[1].content)
+
+
+def test_spoken_request_is_transcribed_then_run_as_a_turn():
+    brain = [
+        [_call("create_list", {"title": "Shopping List", "items": ["pears"]}, "c1")],
+        [_call("say", {"message": "Added pears to a new Shopping List."}, "c2")],
+        [assistant_message("done")],
+    ]
+    stt = FakeSTT("add pears to my shopping list")
+    convo, events = run_turns(brain, ["Pears aboard!"], [b"webm-audio"], stt=stt)
+
+    assert stt.heard == [(b"webm-audio", "audio/webm")]
+    types = [e["type"] for e in events]
+    assert types.index("transcript") < types.index("say")
+    assert [e["text"] for e in events if e["type"] == "transcript"] == ["add pears to my shopping list"]
+    assert convo.ctx.user_message == "add pears to my shopping list"
+    assert [i.text for i in convo.ctx.workspace.get("list-1").items] == ["pears"]
+    assert types.count("turn_end") == 1 and types[-1] == "turn_end"
+    assert convo.busy is False
+
+
+def test_transcription_failure_reports_why_and_unlocks_input():
+    err = ApiError(status_code=401, body={"detail": {"message": "Invalid API key."}})
+    convo, events = run_turns([], [], [b"webm-audio"], stt=FakeSTT(fail=err))
+    failures = [e for e in events if e["type"] == "activity" and "Couldn't hear that" in e.get("text", "")]
+    assert failures[0]["detail"] == "ElevenLabs error 401: Invalid API key."
+    assert any(e["type"] == "error" for e in events)
+    assert not any(e["type"] in ("transcript", "say") for e in events)
+    assert events[-1]["type"] == "turn_end"
+    assert convo.busy is False
+
+
+def test_silent_recording_asks_again_without_running_the_brain():
+    convo, events = run_turns([], [], [b"webm-audio"], stt=FakeSTT(""))
+    assert [e["text"] for e in events if e["type"] == "error"] == ["Didn't catch that. Try again?"]
+    assert not any(e["type"] in ("transcript", "say") for e in events)
+    assert events[-1]["type"] == "turn_end"
+    assert convo.busy is False
+
+
+def test_voice_message_without_speech_to_text_is_refused():
+    convo, events = run_turns([], [], [b"webm-audio"])
+    assert [e["type"] for e in events] == ["error", "turn_end"]
+    assert convo.busy is False
+
+
+def test_build_stt_is_off_without_a_key(monkeypatch):
+    import app.stt
+
+    monkeypatch.setattr(app.stt, "settings", dataclasses.replace(app.stt.settings, elevenlabs_api_key=""))
+    assert app.stt.build_stt() is None
+    on = dataclasses.replace(app.stt.settings, elevenlabs_api_key="test-key", elevenlabs_stt_model="model-z")
+    monkeypatch.setattr(app.stt, "settings", on)
+    stt = app.stt.build_stt()  # builds a client; makes no network call
+    assert (stt.model, stt.label) == ("model-z", "ElevenLabs model-z")
+
+
+def test_elevenlabs_transcription_request():
+    import httpx
+
+    from app.stt import ElevenLabsSTT
+
+    sent = []
+
+    def handler(request):  # stands in for ElevenLabs: records the request, returns a transcript
+        sent.append(request)
+        return httpx.Response(200, json={
+            "language_code": "en", "language_probability": 1.0, "text": " add pears ", "words": [],
+        })
+
+    async def go():
+        stt = ElevenLabsSTT("test-key", "scribe_v2",
+                            httpx_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+        return await stt.transcribe(b"webm-audio", "audio/webm")
+
+    assert asyncio.run(go()) == "add pears"
+    body = sent[0].read()
+    assert sent[0].method == "POST" and "/v1/speech-to-text" in str(sent[0].url)
+    assert b'name="model_id"' in body and b"scribe_v2" in body
+    assert b"webm-audio" in body and b"audio/webm" in body
+    assert b'name="tag_audio_events"' in body
+
+
+def test_socket_advertises_voice_input_and_rejects_bad_recordings():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app).websocket_connect("/ws") as ws:
+        hello = ws.receive_json()
+        assert hello["type"] == "hello" and hello["transcription"] is None  # no key: no mic
+        ws.send_json({"type": "voice_message", "audio": "not base64!", "mime": "audio/webm"})
+        assert ws.receive_json()["type"] == "error"
+        assert ws.receive_json()["type"] == "turn_end"

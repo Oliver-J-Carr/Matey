@@ -149,6 +149,13 @@ button, input { font: inherit; }
 }
 .composer button:disabled, .composer input:disabled { cursor: not-allowed; }
 .composer button:disabled { background: #7a5a4a; color: #d8c8b0; }
+/* Microphone: only shown when the server has speech-to-text. */
+.composer .mic { display: grid; place-items: center; padding: 0 14px; background: var(--parchment); color: var(--ink); }
+.composer .mic svg { width: 20px; height: 20px; }
+.composer .mic:hover:not(:disabled) { background: var(--note); }
+.composer .mic[aria-pressed="true"] { background: var(--coral); color: var(--parchment); animation: listen 1s infinite steps(2, end); }
+.composer .mic:disabled { background: var(--parchment-edge); color: var(--ink-soft); }
+@keyframes listen { 50% { background: #8f2a1c; } }
 .you-said { margin: 0 0 10px; text-align: right; color: var(--foam-dim); font-size: 15px; }
 .you-said::before { content: "You: "; color: var(--foam); }
 

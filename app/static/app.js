@@ -326,11 +326,13 @@ $("feed-clear").addEventListener("click", () => {
 // ------------------------------------------------------------------ composer
 const input = $("message");
 const sendBtn = $("send");
+const micBtn = $("mic");
 let socket = null;
 
 function setInputEnabled(on) {
   input.disabled = !on;
   sendBtn.disabled = !on;
+  micBtn.disabled = !on;
   input.placeholder = on ? "Try: add bananas and apples to my shopping list" : "Matey's on it…";
   $("status-text").textContent = on ? "Ready for orders" : busy ? "Working…" : "Connecting…";
   if (on) input.focus();
@@ -343,20 +345,105 @@ $("composer").addEventListener("submit", (e) => {
   socket.send(JSON.stringify({ type: "user_message", text }));
   $("you-said").textContent = text;
   $("you-said").hidden = false;
+  input.value = "";
+  startTurn();
+});
+
+// Lock the composer while Matey works on the request just sent.
+function startTurn() {
   $("speech").classList.add("stale"); // fade the previous reply while Matey works
   wakeAudio().catch(() => {}); // warm up the audio output while Matey thinks (needs this click)
-  input.value = "";
   busy = true;
   setInputEnabled(false);
   refreshHead();
+}
+
+// ------------------------------------------------------------------ microphone
+// Click to start recording, click again to send it. Shown only when the
+// server has speech-to-text (hello.transcription) and the browser allows the
+// mic, which needs localhost or HTTPS. The server transcribes the recording
+// and runs it as a normal turn, sending the words back as a transcript event.
+const MAX_RECORDING_MS = 30000;
+let recording = null; // { recorder, chunks, timer, send } while listening
+
+async function startRecording() {
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (err) {
+    feedEvent({ kind: "error", text: `⚠️ Microphone unavailable: ${err.message || err.name}` });
+    return;
+  }
+  if (busy || recording || socket?.readyState !== WebSocket.OPEN) {
+    stream.getTracks().forEach((t) => t.stop());
+    return;
+  }
+  const rec = { recorder: new MediaRecorder(stream), chunks: [], send: true };
+  rec.recorder.addEventListener("dataavailable", (e) => {
+    if (e.data.size) rec.chunks.push(e.data);
+  });
+  rec.recorder.addEventListener("stop", () => {
+    stream.getTracks().forEach((t) => t.stop()); // turns off the browser's recording indicator
+    if (rec.send) sendRecording(new Blob(rec.chunks, { type: rec.recorder.mimeType || "audio/webm" }));
+  });
+  rec.timer = setTimeout(() => stopRecording(true), MAX_RECORDING_MS);
+  recording = rec;
+  rec.recorder.start();
+  micBtn.setAttribute("aria-pressed", "true");
+  micBtn.setAttribute("aria-label", "Stop and send");
+  input.disabled = true;
+  sendBtn.disabled = true;
+  input.placeholder = "Listening… click the mic to send";
+}
+
+// send=false throws the recording away (used on disconnect).
+function stopRecording(send) {
+  if (!recording) return;
+  clearTimeout(recording.timer);
+  recording.send = send;
+  recording.recorder.stop();
+  recording = null;
+  micBtn.setAttribute("aria-pressed", "false");
+  micBtn.setAttribute("aria-label", "Speak to Matey");
+  if (send) {
+    $("you-said").hidden = true; // until the transcript arrives
+    startTurn();
+  }
+}
+
+function sendRecording(blob) {
+  if (!blob.size) return voiceFailed("⚠️ Nothing was recorded.");
+  const reader = new FileReader();
+  reader.onload = () => {
+    if (socket?.readyState !== WebSocket.OPEN) return;
+    const audio = String(reader.result).split(",")[1]; // drop the "data:...;base64," prefix
+    socket.send(JSON.stringify({ type: "voice_message", audio, mime: blob.type }));
+  };
+  reader.onerror = () => voiceFailed("⚠️ Couldn't read the recording.");
+  reader.readAsDataURL(blob);
+}
+
+function voiceFailed(text) {
+  feedEvent({ kind: "error", text });
+  handlers.turn_end();
+}
+
+micBtn.addEventListener("click", () => {
+  wakeAudio().catch(() => {}); // this click lets the audio output start
+  if (recording) stopRecording(true);
+  else if (!busy) startRecording();
 });
 
 // ------------------------------------------------------------------ socket
 const handlers = {
   hello(e) {
     speechOn = Boolean(e.speech);
+    const micOn = Boolean(e.transcription && navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+    micBtn.hidden = !micOn;
+    const voiceInput = !e.transcription ? "off"
+      : micOn ? e.transcription : `${e.transcription}, but this page can't use the mic (needs localhost or HTTPS)`;
     $("feed-models").textContent = `Brain model: ${e.brain_model}. Voice model: ${e.voice_model}. `
-      + `Spoken voice: ${e.speech ?? "off"}. Version ${e.version}.`;
+      + `Spoken voice: ${e.speech ?? "off"}. Voice input: ${voiceInput}. Version ${e.version}.`;
     setInputEnabled(true);
   },
   status(e) {
@@ -364,6 +451,10 @@ const handlers = {
     refreshHead();
   },
   say(e) { speak(e); },
+  transcript(e) {
+    $("you-said").textContent = e.text;
+    $("you-said").hidden = false;
+  },
   ui(e) {
     if (e.op === "upsert") upsertWindow(e.component);
     if (e.op === "delete") removeWindow(e.component_id);
@@ -389,6 +480,7 @@ function connect() {
   socket.addEventListener("close", () => {
     // A new connection is a new conversation, so clear the old windows.
     busy = false;
+    stopRecording(false);
     stopSpeech();
     refreshHead();
     setInputEnabled(false);
