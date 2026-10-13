@@ -33,7 +33,7 @@ You need Docker with the Compose plugin and an OpenAI API key.
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/oliver-j-carr/matey.git && cd matey
+   git clone https://github.com/Oliver-J-Carr/Matey.git && cd matey
    ```
 2. Create your settings file:
    ```bash
