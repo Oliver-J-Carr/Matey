@@ -14,6 +14,7 @@ It's a proof of concept for agent behaviour: planning, tool use, several actions
 - **Several actions in one request.** "Called Jane back, add pears" adds the pears *and* removes the Jane note, with a reply for each.
 - **Replying is a tool.** The agent decides when to speak, so it can give progress updates mid-task.
 - **Persona kept separate.** A planning agent does the work in plain language. A separate voice agent turns each message into Matey's pirate speech.
+- **Spoken replies (optional).** With an ElevenLabs API key, every line Matey says is read aloud in a pirate voice. Lines play one at a time, each finishing before the next appears. Without a key, replies are text only and each line stays on screen long enough to read.
 - **Live activity panel.** A collapsible feed with an unread badge shows every agent step and tool call as it happens.
 - **Animated pixel pirate.** He bobs while idle, ponders while working and talks when replying.
 - **Full tracing.** Every request appears as one trace in the OpenAI Traces dashboard.
@@ -22,6 +23,7 @@ It's a proof of concept for agent behaviour: planning, tool use, several actions
 ## Tech stack
 
 - Python, [OpenAI Agents SDK](https://github.com/openai/openai-agents-python), FastAPI, Uvicorn
+- [ElevenLabs](https://elevenlabs.io) text-to-speech (optional)
 - WebSockets for live updates
 - Vanilla HTML, CSS and JavaScript (no build step), with the pirate drawn as SVG pixel art
 - Docker and Docker Compose
@@ -39,7 +41,7 @@ You need Docker with the Compose plugin and an OpenAI API key.
    ```bash
    cp .env.example .env
    ```
-3. Edit `.env` and set `OPENAI_API_KEY`.
+3. Edit `.env` and set `OPENAI_API_KEY`. To hear Matey speak, also set `ELEVENLABS_API_KEY` (optional).
 4. Build and start:
    ```bash
    docker compose up -d --build
@@ -60,13 +62,17 @@ To run the tests: `python3 -m venv .venv && . .venv/bin/activate && pip install 
 | `MAX_TURNS` | No | Safety cap on model calls per request |
 | `TRACE_WORKFLOW_NAME` | No | Name shown for each request in OpenAI Traces |
 | `OPENAI_AGENTS_DISABLE_TRACING` | No | Set to `true` to stop sending traces to OpenAI |
+| `ELEVENLABS_API_KEY` | No | Turns on Matey's spoken voice. Leave blank for text-only replies |
+| `ELEVENLABS_VOICE_ID` | No | ElevenLabs voice to use. Defaults to Pirate Marshal (`PPzYpIqttlTYA83688JI`) |
+| `ELEVENLABS_MODEL` | No | ElevenLabs text-to-speech model. Defaults to `eleven_v4_turbo` |
+| `ELEVENLABS_SPEED` | No | Matey's speaking speed, from `0.7` (slower) to `1.2` (faster). `1.0` is normal. Defaults to `1.1` |
 
 See `.env.example` for defaults.
 
 ## Roadmap
 
 - **Voice input:** push-to-talk speech-to-text, so requests are spoken and then answered.
-- **Spoken replies:** a pirate text-to-speech voice, with the mouth synced to the audio. 
+- **Lip sync:** Matey's mouth moving in time with the spoken audio.
 - **More window types,** such as timers and weather.
 - **Persistence,** so windows survive a restart.
 - **User editing,** such as ticking off items and closing windows by hand.

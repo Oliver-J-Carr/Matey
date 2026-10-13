@@ -153,7 +153,7 @@ async def say(ctx: Ctx, message: str) -> str:
             await c.activity("error", "Voice layer failed, sending plain text", repr(exc))
             line = message
         c.spoken_this_turn.append(line)
-        await c.emit({"type": "say", "text": line, "plain": message})
+        await c.deliver_line(line, message)
     return "Delivered to the user."
 
 

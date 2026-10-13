@@ -22,6 +22,12 @@ class Settings:
     max_turns: int = int(_env("MAX_TURNS", "12"))
     # Name shown for each turn in the OpenAI Traces dashboard.
     trace_workflow_name: str = _env("TRACE_WORKFLOW_NAME", "Matey turn")
+    # Spoken voice (ElevenLabs text-to-speech). Blank key = voice off, text only.
+    elevenlabs_api_key: str = _env("ELEVENLABS_API_KEY")
+    elevenlabs_voice_id: str = _env("ELEVENLABS_VOICE_ID", "PPzYpIqttlTYA83688JI")  # Pirate Marshal
+    elevenlabs_model: str = _env("ELEVENLABS_MODEL", "eleven_v4_turbo")
+    # Speaking speed: 1.0 is normal, ElevenLabs allows 0.7 (slower) to 1.2 (faster).
+    elevenlabs_speed: float = float(_env("ELEVENLABS_SPEED", "1.1"))
 
 
 settings = Settings()

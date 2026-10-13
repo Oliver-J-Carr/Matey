@@ -54,6 +54,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
         "version": __version__,
         "brain_model": settings.brain_model,
         "voice_model": settings.voice_model,
+        "speech": convo.ctx.tts.label if convo.ctx.tts else None,
     })
 
     turn: asyncio.Task | None = None

@@ -13,8 +13,53 @@ const el = (tag, cls, text) => {
 const head = new PirateHead($("head"));
 const stage = $("stage");
 let busy = false;      // the agent is working on a turn
-let speaking = false;  // a speech line is being "spoken"
-const speechQueue = [];
+let speaking = false;  // a speech line is being shown (and played, if it has audio)
+const speechQueue = [];  // { text, audio } lines waiting their turn
+let stopCurrent = null; // cuts the playing line short (used on disconnect)
+
+// Lines without audio stay up for roughly reading time, within these bounds.
+const MIN_DISPLAY_MS = 4000;
+const MAX_DISPLAY_MS = 12000;
+const MS_PER_CHAR = 60;
+// Pause after a spoken line before the next one starts.
+const SPEECH_GAP_MS = 500;
+// Safety nets so a stalled clip can't hold up the queue forever: a limit on
+// getting the clip ready, then its own length plus some slack once it plays.
+const AUDIO_LOAD_TIMEOUT_MS = 10000;
+const AUDIO_GRACE_MS = 3000;
+// A little silence before each clip so the very first syllable isn't clipped.
+const AUDIO_LEAD_IN_S = 0.1;
+// Let the audio output sleep once Matey has been quiet and idle this long.
+const AUDIO_SLEEP_MS = 10000;
+
+// One Web Audio context for the whole page. Kept running while Matey works
+// and talks, so the output device is already awake when a line starts.
+// (A fresh <audio> element per line made the first line fade in as the
+// device powered up from idle.)
+let speechOn = false; // set from hello: the server has a TTS voice
+let audioCtx = null;
+let sleepTimer = null;
+
+async function wakeAudio() { // async so any failure is a rejection, never a throw
+  clearTimeout(sleepTimer);
+  if (!speechOn) return;
+  audioCtx ??= new AudioContext();
+  await audioCtx.resume();
+}
+
+function sleepAudioSoon() {
+  clearTimeout(sleepTimer);
+  sleepTimer = setTimeout(() => {
+    if (!busy && !speaking) audioCtx?.suspend().catch(() => {});
+  }, AUDIO_SLEEP_MS);
+}
+
+async function decodeClip(base64) {
+  await wakeAudio();
+  if (audioCtx?.state !== "running") throw new Error("audio output unavailable");
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  return audioCtx.decodeAudioData(bytes.buffer);
+}
 
 function refreshHead() {
   head.setState(speaking ? "talking" : busy ? "thinking" : "idle");
@@ -22,29 +67,70 @@ function refreshHead() {
   $("feed").dataset.busy = String(busy);
 }
 
-function speak(text) {
-  speechQueue.push(text);
+function speak(line) {
+  speechQueue.push({ text: line.text, audio: line.audio });
   if (!speaking) playNext();
 }
 
+function displayTime(text) {
+  return Math.min(MAX_DISPLAY_MS, Math.max(MIN_DISPLAY_MS, 1000 + text.length * MS_PER_CHAR));
+}
+
 function playNext() {
-  const text = speechQueue.shift();
-  if (text === undefined) {
+  const line = speechQueue.shift();
+  if (line === undefined) {
     speaking = false;
     refreshHead();
+    sleepAudioSoon();
     return;
   }
   speaking = true;
   refreshHead();
   const bubble = $("speech");
-  $("speech-text").textContent = text;
+  $("speech-text").textContent = line.text;
   bubble.hidden = false;
   bubble.classList.remove("enter", "stale");
   void bubble.offsetWidth; // restart the pop animation
   bubble.classList.add("enter");
-  // Rough speaking time from text length. Later: the length of real TTS audio.
-  const ms = Math.min(7000, Math.max(1600, 700 + text.length * 48));
-  setTimeout(playNext, ms);
+
+  // Exactly one of: audio ended, audio failed, watchdog, or timed hold moves the queue on.
+  let finished = false;
+  let watchdog = null;
+  const finish = (delay) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(watchdog);
+    stopCurrent = null;
+    setTimeout(playNext, delay);
+  };
+
+  if (!line.audio) {
+    finish(displayTime(line.text));
+    return;
+  }
+  let source = null;
+  stopCurrent = () => {
+    source?.stop();
+    finish(0);
+  };
+  watchdog = setTimeout(stopCurrent, AUDIO_LOAD_TIMEOUT_MS);
+  decodeClip(line.audio)
+    .then((buffer) => {
+      if (finished) return; // cut short while decoding
+      source = audioCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(audioCtx.destination);
+      source.onended = () => finish(SPEECH_GAP_MS);
+      source.start(audioCtx.currentTime + AUDIO_LEAD_IN_S);
+      clearTimeout(watchdog);
+      watchdog = setTimeout(stopCurrent, (AUDIO_LEAD_IN_S + buffer.duration) * 1000 + AUDIO_GRACE_MS);
+    })
+    .catch(() => finish(displayTime(line.text))); // can't decode or play: show it for reading time
+}
+
+function stopSpeech() {
+  speechQueue.length = 0;
+  stopCurrent?.();
 }
 
 // ------------------------------------------------------------------ windows
@@ -258,6 +344,7 @@ $("composer").addEventListener("submit", (e) => {
   $("you-said").textContent = text;
   $("you-said").hidden = false;
   $("speech").classList.add("stale"); // fade the previous reply while Matey works
+  wakeAudio().catch(() => {}); // warm up the audio output while Matey thinks (needs this click)
   input.value = "";
   busy = true;
   setInputEnabled(false);
@@ -267,14 +354,16 @@ $("composer").addEventListener("submit", (e) => {
 // ------------------------------------------------------------------ socket
 const handlers = {
   hello(e) {
-    $("feed-models").textContent = `Brain model: ${e.brain_model}. Voice model: ${e.voice_model}. Version ${e.version}.`;
+    speechOn = Boolean(e.speech);
+    $("feed-models").textContent = `Brain model: ${e.brain_model}. Voice model: ${e.voice_model}. `
+      + `Spoken voice: ${e.speech ?? "off"}. Version ${e.version}.`;
     setInputEnabled(true);
   },
   status(e) {
     busy = e.state !== "idle";
     refreshHead();
   },
-  say(e) { speak(e.text); },
+  say(e) { speak(e); },
   ui(e) {
     if (e.op === "upsert") upsertWindow(e.component);
     if (e.op === "delete") removeWindow(e.component_id);
@@ -285,6 +374,7 @@ const handlers = {
     busy = false;
     refreshHead();
     setInputEnabled(true);
+    if (!speaking) sleepAudioSoon();
   },
 };
 
@@ -299,6 +389,7 @@ function connect() {
   socket.addEventListener("close", () => {
     // A new connection is a new conversation, so clear the old windows.
     busy = false;
+    stopSpeech();
     refreshHead();
     setInputEnabled(false);
     for (const id of [...windows.keys()]) removeWindow(id);

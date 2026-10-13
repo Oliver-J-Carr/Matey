@@ -6,20 +6,44 @@ browser would receive.
 """
 
 import asyncio
+import base64
+import dataclasses
 
+import pytest
 from agents import set_tracing_disabled
 from agents.testing import ScriptedModel, assistant_message, function_call
+from elevenlabs.core.api_error import ApiError
 
 from app.conversation import Conversation
 
 set_tracing_disabled(True)
 
 
+@pytest.fixture(autouse=True)
+def no_real_tts(monkeypatch):
+    # Hermetic: never build a real ElevenLabs client, even if the key is set.
+    monkeypatch.setattr("app.conversation.build_tts", lambda: None)
+
+
+class FakeTTS:
+    """Stands in for ElevenLabsTTS: returns fake 'audio', or raises."""
+    model = "fake-tts"
+    label = "Fake TTS"
+
+    def __init__(self, fail=None):
+        self.fail = fail  # an exception to raise instead of returning audio
+
+    async def synthesize(self, text):
+        if self.fail:
+            raise self.fail
+        return b"mp3:" + text.encode()
+
+
 def _call(name, args, cid):
     return function_call(name, args, call_id=cid)
 
 
-def run_turns(brain_steps, voice_lines, messages):
+def run_turns(brain_steps, voice_lines, messages, tts=None):
     events = []
 
     async def send(event):
@@ -30,6 +54,7 @@ def run_turns(brain_steps, voice_lines, messages):
             send,
             brain_model=ScriptedModel(brain_steps),
             voice_model=ScriptedModel([[assistant_message(t)] for t in voice_lines]),
+            tts=tts,
         )
         for m in messages:
             await convo.handle_user_message(m)
@@ -69,6 +94,7 @@ def test_multi_action_turn_updates_windows_and_speaks_twice():
 
     says = [e["text"] for e in events if e["type"] == "say"]
     assert says == voice
+    assert not any("audio" in e for e in events if e["type"] == "say")  # no TTS: text only
     assert sum(e["type"] == "turn_end" for e in events) == 3
     assert any(e["type"] == "ui" and e["op"] == "delete" and e["component_id"] == "note-1" for e in events)
     # Each tool call is reported as running, then finished, under the same key.
@@ -133,3 +159,74 @@ def test_update_note_keeps_the_same_window():
     notes = convo.ctx.workspace.components()
     assert [(n.id, n.text) for n in notes] == [("note-1", "Call Jane back after 5pm")]
     assert not any(e["type"] == "ui" and e["op"] == "delete" for e in events)
+
+
+def test_with_tts_every_line_carries_its_audio():
+    brain = [
+        [_call("say", {"message": "Starting."}, "c1")],
+        [_call("say", {"message": "Finished."}, "c2")],
+        [assistant_message("done")],
+        # Second turn: plain-text answer, voiced by the fallback path.
+        [assistant_message("It is sunny.")],
+    ]
+    voice = ["Hoistin' sail!", "All done!", "The sun be shinin'!"]
+    _, events = run_turns(brain, voice, ["do it", "weather?"], tts=FakeTTS())
+    says = [e for e in events if e["type"] == "say"]
+    assert [e["text"] for e in says] == voice
+    assert [base64.b64decode(e["audio"]) for e in says] == [b"mp3:" + v.encode() for v in voice]
+
+
+def test_tts_failure_still_shows_the_line():
+    brain = [
+        [_call("say", {"message": "Added pears."}, "c1")],
+        [assistant_message("done")],
+    ]
+    err = ApiError(status_code=402, body={"detail": {"message": "Free users cannot use library voices."}})
+    convo, events = run_turns(brain, ["Pears aboard!"], ["add pears"], tts=FakeTTS(fail=err))
+    says = [e for e in events if e["type"] == "say"]
+    assert [e["text"] for e in says] == ["Pears aboard!"] and "audio" not in says[0]
+    failures = [e for e in events if e["type"] == "activity" and "Spoken voice failed" in e.get("text", "")]
+    # The feed shows ElevenLabs' reason, not the SDK's bare "ApiError()".
+    assert failures[0]["detail"] == "ElevenLabs error 402: Free users cannot use library voices."
+    assert events[-1]["type"] == "turn_end"
+    assert convo.busy is False
+
+
+def test_build_tts_is_off_without_a_key(monkeypatch):
+    import app.tts
+
+    monkeypatch.setattr(app.tts, "settings", dataclasses.replace(app.tts.settings, elevenlabs_api_key=""))
+    assert app.tts.build_tts() is None
+    on = dataclasses.replace(app.tts.settings, elevenlabs_api_key="test-key",
+                             elevenlabs_voice_id="voice-x", elevenlabs_model="model-y")
+    monkeypatch.setattr(app.tts, "settings", on)
+    tts = app.tts.build_tts()  # builds a client; makes no network call
+    assert (tts.voice_id, tts.model) == ("voice-x", "model-y")
+
+
+def test_elevenlabs_request_asks_for_the_configured_speed():
+    import json
+
+    import httpx
+
+    from app.tts import ElevenLabsTTS
+
+    sent = []
+
+    def handler(request):  # stands in for ElevenLabs: records the request, returns fake audio
+        sent.append(request)
+        return httpx.Response(200, content=b"ID3fake", headers={"content-type": "audio/mpeg"})
+
+    async def go(speed):
+        tts = ElevenLabsTTS("test-key", "voice-x", "model-y", speed,
+                            httpx_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+        return await tts.synthesize("Ahoy!")
+
+    assert asyncio.run(go(1.1)) == b"ID3fake"
+    body = json.loads(sent[0].content)
+    assert "/v1/text-to-speech/voice-x" in str(sent[0].url)
+    assert body["model_id"] == "model-y" and body["text"] == "Ahoy!"
+    assert body["voice_settings"]["speed"] == 1.1
+
+    asyncio.run(go(1.0))  # normal speed: leave the voice's own settings alone
+    assert "voice_settings" not in json.loads(sent[1].content)

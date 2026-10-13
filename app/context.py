@@ -7,11 +7,15 @@ every hook, but never sends it to the model. It is our "backstage" area.
 from __future__ import annotations
 
 import asyncio
+import base64
 import itertools
 import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
+from agents import custom_span
+
+from .tts import describe_error
 from .workspace import Workspace
 
 # A function that pushes one JSON event down the WebSocket to the browser.
@@ -25,6 +29,7 @@ class MateyContext:
     workspace: Workspace
     send: SendEvent
     voice_agent: Any = None  # the agents.Agent used by the say tool
+    tts: Any = None  # text-to-speech (app.tts.ElevenLabsTTS), or None for text only
     user_message: str = ""
     # Matey's lines spoken this turn (via say), so the voice avoids repeats.
     spoken_this_turn: list[str] = field(default_factory=list)
@@ -50,6 +55,19 @@ class MateyContext:
     async def activity(self, kind: str, text: str, detail: str = "") -> None:
         """Add an entry to the browser's activity feed."""
         await self.emit({"type": "activity", "kind": kind, "text": text, "detail": detail})
+
+    async def deliver_line(self, line: str, plain: str) -> None:
+        """Send one of Matey's lines to the browser, with audio if TTS is on.
+        Every say event goes through here."""
+        event = {"type": "say", "text": line, "plain": plain}
+        if self.tts:
+            try:
+                with custom_span("ElevenLabs TTS", data={"model": self.tts.model, "chars": len(line)}):
+                    audio = await self.tts.synthesize(line)
+                event["audio"] = base64.b64encode(audio).decode("ascii")
+            except Exception as exc:  # TTS failed: still show the line
+                await self.activity("error", "Spoken voice failed, showing text only", describe_error(exc))
+        await self.emit(event)
 
     async def ui_upsert(self, component: dict) -> None:
         await self.emit({"type": "ui", "op": "upsert", "component": component})

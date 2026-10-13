@@ -19,6 +19,7 @@ from .brain import build_brain_agent
 from .config import settings
 from .context import MateyContext, SendEvent
 from .hooks import ActivityHooks
+from .tts import build_tts
 from .voice import build_voice_agent, pirate_line
 from .workspace import Workspace
 
@@ -26,13 +27,14 @@ FALLBACK_LINE = "Blast, me wits be tangled in the riggin'. Try that again, capta
 
 
 class Conversation:
-    def __init__(self, send: SendEvent, brain_model=None, voice_model=None) -> None:
+    def __init__(self, send: SendEvent, brain_model=None, voice_model=None, tts=None) -> None:
         self.id = f"matey_{uuid.uuid4().hex[:12]}"
         self.brain = build_brain_agent(brain_model)
         self.ctx = MateyContext(
             workspace=Workspace(),
             send=send,
             voice_agent=build_voice_agent(voice_model),
+            tts=tts if tts is not None else build_tts(),
         )
         # In-memory SQLite: remembers earlier turns of this conversation only.
         self.session = SQLiteSession(self.id)
@@ -70,7 +72,7 @@ class Conversation:
                 await self._fallback_if_silent(str(result.final_output or ""))
         except Exception as exc:  # keep the demo alive, but show what broke
             await self.ctx.activity("error", "⚠️ The turn failed", repr(exc))
-            await self.ctx.emit({"type": "say", "text": FALLBACK_LINE, "plain": "error"})
+            await self.ctx.deliver_line(FALLBACK_LINE, "error")
         finally:
             self.busy = False
             await self.ctx.emit({"type": "status", "state": "idle"})
@@ -84,4 +86,4 @@ class Conversation:
             return
         await self.ctx.activity("agent", "↪️ Brain replied without say; routing through the voice", final)
         line = await pirate_line(self.ctx.voice_agent, self.ctx.user_message, final, [])
-        await self.ctx.emit({"type": "say", "text": line, "plain": final})
+        await self.ctx.deliver_line(line, final)
