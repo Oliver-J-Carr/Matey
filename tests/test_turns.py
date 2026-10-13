@@ -227,7 +227,7 @@ def test_build_tts_is_off_without_a_key(monkeypatch):
     assert (tts.voice_id, tts.model) == ("voice-x", "model-y")
 
 
-def test_elevenlabs_request_asks_for_the_configured_speed():
+def test_elevenlabs_request_sends_the_full_voice_settings():
     import json
 
     import httpx
@@ -241,7 +241,7 @@ def test_elevenlabs_request_asks_for_the_configured_speed():
         return httpx.Response(200, content=b"ID3fake", headers={"content-type": "audio/mpeg"})
 
     async def go(speed):
-        tts = ElevenLabsTTS("test-key", "voice-x", "model-y", speed,
+        tts = ElevenLabsTTS("test-key", "voice-x", "model-y", speed, stability=0.6, similarity=0.9,
                             httpx_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
         return await tts.synthesize("Ahoy!")
 
@@ -249,10 +249,12 @@ def test_elevenlabs_request_asks_for_the_configured_speed():
     body = json.loads(sent[0].content)
     assert "/v1/text-to-speech/voice-x" in str(sent[0].url)
     assert body["model_id"] == "model-y" and body["text"] == "Ahoy!"
-    assert body["voice_settings"]["speed"] == 1.1
+    assert body["voice_settings"] == {
+        "stability": 0.6, "similarity_boost": 0.9, "use_speaker_boost": True, "speed": 1.1,
+    }
 
-    asyncio.run(go(1.0))  # normal speed: leave the voice's own settings alone
-    assert "voice_settings" not in json.loads(sent[1].content)
+    asyncio.run(go(1.0))  # normal speed still pins the rest, so the accent can't drift
+    assert json.loads(sent[1].content)["voice_settings"]["similarity_boost"] == 0.9
 
 
 def test_spoken_request_is_transcribed_then_run_as_a_turn():

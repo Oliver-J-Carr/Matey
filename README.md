@@ -69,6 +69,8 @@ To run the tests: `python3 -m venv .venv && . .venv/bin/activate && pip install 
 | `ELEVENLABS_VOICE_ID` | No | ElevenLabs voice to use. Defaults to Pirate Marshal (`PPzYpIqttlTYA83688JI`) |
 | `ELEVENLABS_MODEL` | No | ElevenLabs text-to-speech model. Defaults to `eleven_v4_turbo` |
 | `ELEVENLABS_SPEED` | No | Matey's speaking speed, from `0.7` (slower) to `1.2` (faster). `1.0` is normal. Defaults to `1.1` |
+| `ELEVENLABS_STABILITY` | No | How consistent Matey's delivery is from line to line, `0.0` to `1.0`. Higher is steadier but can sound flat. Defaults to `0.6` |
+| `ELEVENLABS_SIMILARITY` | No | How closely each line sticks to the pirate voice, `0.0` to `1.0`. Defaults to `0.9` |
 | `ELEVENLABS_STT_MODEL` | No | ElevenLabs speech-to-text model for spoken requests. Defaults to `scribe_v2` |
 
 See `.env.example` for defaults.

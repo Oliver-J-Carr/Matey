@@ -28,6 +28,10 @@ class Settings:
     elevenlabs_model: str = _env("ELEVENLABS_MODEL", "eleven_v4_turbo")
     # Speaking speed: 1.0 is normal, ElevenLabs allows 0.7 (slower) to 1.2 (faster).
     elevenlabs_speed: float = float(_env("ELEVENLABS_SPEED", "1.1"))
+    # How true each line stays to the voice, both 0.0 to 1.0. Higher stability = more
+    # consistent delivery (too high sounds flat); higher similarity = closer to the voice.
+    elevenlabs_stability: float = float(_env("ELEVENLABS_STABILITY", "0.6"))
+    elevenlabs_similarity: float = float(_env("ELEVENLABS_SIMILARITY", "0.9"))
     # Spoken requests (ElevenLabs speech-to-text). Uses the same key; blank = no microphone.
     elevenlabs_stt_model: str = _env("ELEVENLABS_STT_MODEL", "scribe_v2")
 

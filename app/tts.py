@@ -14,7 +14,8 @@ TIMEOUT_SECONDS = 15
 
 
 class ElevenLabsTTS:
-    def __init__(self, api_key: str, voice_id: str, model: str, speed: float = 1.0, httpx_client=None) -> None:
+    def __init__(self, api_key: str, voice_id: str, model: str, speed: float = 1.0,
+                 stability: float = 0.5, similarity: float = 0.75, httpx_client=None) -> None:
         # Imported here so the voice-off path never loads the SDK.
         from elevenlabs.client import AsyncElevenLabs
 
@@ -23,6 +24,8 @@ class ElevenLabsTTS:
         self.voice_id = voice_id
         self.model = model
         self.speed = speed
+        self.stability = stability
+        self.similarity = similarity
 
     @property
     def label(self) -> str:
@@ -32,15 +35,22 @@ class ElevenLabsTTS:
         """Return the line as MP3 bytes. Raises on API or network errors."""
         from elevenlabs import VoiceSettings
 
-        # At normal speed send no voice settings, so the voice's own settings apply.
-        extra = {"voice_settings": VoiceSettings(speed=self.speed)} if self.speed != 1.0 else {}
+        # Always sent in full, so every line uses the same settings instead of
+        # whatever ElevenLabs fills in. Higher stability and similarity keep the
+        # accent steady; speaker boost pulls each line closer to the voice.
+        voice_settings = VoiceSettings(
+            stability=self.stability,
+            similarity_boost=self.similarity,
+            use_speaker_boost=True,
+            speed=self.speed,
+        )
         chunks = [
             chunk async for chunk in self.client.text_to_speech.convert(
                 voice_id=self.voice_id,
                 text=text,
                 model_id=self.model,
                 output_format=OUTPUT_FORMAT,
-                **extra,
+                voice_settings=voice_settings,
             )
         ]
         return b"".join(chunks)
@@ -65,4 +75,5 @@ def build_tts() -> ElevenLabsTTS | None:
     return ElevenLabsTTS(
         settings.elevenlabs_api_key, settings.elevenlabs_voice_id,
         settings.elevenlabs_model, settings.elevenlabs_speed,
+        settings.elevenlabs_stability, settings.elevenlabs_similarity,
     )
