@@ -33,7 +33,7 @@ You need Docker with the Compose plugin and an OpenAI API key.
 
 1. Clone the repo:
    ```bash
-   git clone https://github.com/TODO-username/matey.git && cd matey
+   git clone https://github.com/oliver-j-carr/matey.git && cd matey
    ```
 2. Create your settings file:
    ```bash
@@ -66,7 +66,7 @@ See `.env.example` for defaults.
 ## Roadmap
 
 - **Voice input:** push-to-talk speech-to-text, so requests are spoken and then answered.
-- **Spoken replies:** a pirate text-to-speech voice, with the mouth synced to the audio. <!-- TODO: update if this ships in v0.1.0 -->
+- **Spoken replies:** a pirate text-to-speech voice, with the mouth synced to the audio. 
 - **More window types,** such as timers and weather.
 - **Persistence,** so windows survive a restart.
 - **User editing,** such as ticking off items and closing windows by hand.
