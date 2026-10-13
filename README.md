@@ -6,7 +6,6 @@ Matey is a demo of an Alexa-style assistant built with the OpenAI Agents SDK. Ty
 
 It's a proof of concept for agent behaviour: planning, tool use, several actions per request, and live visibility into what the agent is doing.
 
-<!-- TODO: add a screenshot or GIF, e.g. docs/screenshot.png -->
 ![Matey in action](docs/readme-screenshot.png)
 
 ## Key features
@@ -62,8 +61,6 @@ To run the tests: `python3 -m venv .venv && . .venv/bin/activate && pip install 
 | `TRACE_WORKFLOW_NAME` | No | Name shown for each request in OpenAI Traces |
 | `OPENAI_AGENTS_DISABLE_TRACING` | No | Set to `true` to stop sending traces to OpenAI |
 
-<!-- TODO: add any variables introduced since v0.1.0's original build (e.g. for text-to-speech) -->
-
 See `.env.example` for defaults.
 
 ## Roadmap
@@ -73,11 +70,3 @@ See `.env.example` for defaults.
 - **More window types,** such as timers and weather.
 - **Persistence,** so windows survive a restart.
 - **User editing,** such as ticking off items and closing windows by hand.
-
-## Contributing
-
-Issues and ideas are welcome. Coding agents should read [AGENTS.md](AGENTS.md) first.
-
-## Licence
-
-MIT. See [LICENSE](LICENSE).
