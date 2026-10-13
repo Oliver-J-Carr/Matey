@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Matey</title>
+  <link rel="icon" href="/favicon.ico" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="brand">
+    <span class="brand-name">Matey</span>
+    <span class="brand-status" id="status-text">Connecting…</span>
+  </header>
+
+  <main id="deck" class="deck" aria-live="polite">
+    <section class="stage" id="stage">
+      <div class="thought" id="thought" aria-hidden="true"><span></span><span></span><span></span></div>
+      <div class="head" id="head" data-state="idle"></div>
+      <div class="speech" id="speech" hidden>
+        <p id="speech-text"></p>
+      </div>
+    </section>
+    <!-- Windows (lists, notes) are added here by app.js -->
+  </main>
+
+  <form class="composer" id="composer" autocomplete="off">
+    <p class="you-said" id="you-said" hidden></p>
+    <div class="composer-row">
+      <label for="message" class="visually-hidden">Message to Matey</label>
+      <input id="message" name="message" type="text" maxlength="500"
+             placeholder="Try: add bananas and apples to my shopping list" disabled>
+      <button type="submit" id="send" disabled>Send</button>
+    </div>
+  </form>
+
+  <aside class="feed" id="feed" data-open="false">
+    <div class="feed-panel" id="feed-panel" role="region" aria-label="Agent activity" hidden>
+      <div class="feed-head">
+        <h2>What Matey is doing</h2>
+        <button type="button" class="feed-clear" id="feed-clear">Clear</button>
+      </div>
+      <ol class="feed-list" id="feed-list"></ol>
+      <p class="feed-empty" id="feed-empty">Nothing yet. Ask Matey for something and every step appears here.</p>
+      <p class="feed-models" id="feed-models"></p>
+    </div>
+    <button type="button" class="feed-toggle" id="feed-toggle" aria-expanded="false" aria-controls="feed-panel">
+      <span>Activity</span>
+      <span class="badge" id="feed-badge" hidden>0</span>
+    </button>
+  </aside>
+
+  <div class="banner" id="banner" role="alert" hidden></div>
+
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

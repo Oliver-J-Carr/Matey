@@ -1,0 +1,9 @@
+services:
+  matey:
+    build: .
+    image: matey:0.1.0
+    container_name: matey
+    env_file: .env
+    ports:
+      - "8090:8090"
+    restart: unless-stopped

@@ -1,0 +1,9 @@
+[project]
+name = "matey"
+version = "0.1.0"
+description = "Pirate-voiced agentic home-assistant prototype (OpenAI Agents SDK + FastAPI)"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
