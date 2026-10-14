@@ -125,6 +125,34 @@ def test_multi_action_turn_updates_windows_and_speaks_twice():
     assert keys.count("c5") == 2
 
 
+def test_each_say_voices_only_its_own_message():
+    # Regression: the voice used to see the whole request, so the first line
+    # asked about a list the brain was just about to create.
+    request = "delete the jane note and make a shopping list with pears"
+    brain = [
+        [_call("create_note", {"text": "Call Jane back"}, "c1")],
+        [_call("say", {"message": "Made a note to call Jane back."}, "c2")],
+        [assistant_message("done")],
+        [_call("delete_component", {"component_id": "note-1"}, "c3")],
+        [_call("say", {"message": "Deleted the note 'Call Jane back'."}, "c4")],
+        [_call("create_list", {"title": "Shopping List", "items": ["pears"]}, "c5")],
+        [_call("say", {"message": "Created a Shopping List with pears."}, "c6")],
+        [assistant_message("done")],
+    ]
+    voice = ["Note pinned!", "Jane's note goes overboard!", "Pears stowed!"]
+    convo, _ = run_turns(brain, voice, ["note to call jane back", request])
+
+    inputs = [call.input[-1]["content"] for call in convo.ctx.voice_agent.model.calls]
+    assert len(inputs) == 3
+    first, second = inputs[1], inputs[2]
+    assert "Deleted the note 'Call Jane back'." in first
+    assert "pears" not in first and "Shopping List" not in first and request not in first
+    assert "earlier lines" not in first
+    assert "Created a Shopping List with pears." in second
+    assert "Your earlier lines this turn:\n- Jane's note goes overboard!" in second
+    assert "Note pinned!" not in second  # earlier turns don't count
+
+
 def test_duplicate_list_is_refused_and_model_is_told_the_id():
     brain = [
         [_call("create_list", {"title": "Shopping List"}, "c1")],

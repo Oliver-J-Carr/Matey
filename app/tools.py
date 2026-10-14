@@ -141,14 +141,18 @@ async def delete_component(ctx: Ctx, component_id: str) -> str:
 async def say(ctx: Ctx, message: str) -> str:
     """Speak to the user. This is the only way the user hears from you.
 
+    The voice layer sees only this message, not the user's request, and adds
+    the personality. So the message must make sense on its own and have none.
+
     Args:
-        message: One short, plain, factual message, e.g.
-            "Added pears to the Shopping List." No personality: the voice layer adds that.
+        message: One short, plain, factual message about actions already finished,
+            e.g. "Deleted the note 'Call Jane back'." Or a plain request for a tale,
+            e.g. "Tell a short tale about long voyages."
     """
     c = ctx.context
     async with c.say_lock:  # keep replies in order if calls run in parallel
         try:
-            line = await pirate_line(c.voice_agent, c.user_message, message, c.spoken_this_turn)
+            line = await pirate_line(c.voice_agent, message, c.spoken_this_turn)
         except Exception as exc:  # voice failed: still tell the user, plainly
             await c.activity("error", "Voice layer failed, sending plain text", repr(exc))
             line = message

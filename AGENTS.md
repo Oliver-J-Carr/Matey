@@ -69,7 +69,8 @@ docker image prune
 ## Key design decisions (keep these)
 
 - **Replying is a tool.** The brain speaks only by calling `say`. This lets it give progress updates mid-turn and several replies per turn. Its final text output is `done` and is not shown.
-- **The persona lives only in the voice step.** The brain writes plain, factual messages. `say` passes them to the voice agent, which adds the pirate. Never add persona, jokes or dialect to the brain prompt, tool docstrings or tool results.
+- **The persona lives only in the voice step.** The brain writes plain, factual messages. `say` passes them to the voice agent, which adds the pirate. Never add persona, jokes or dialect to the brain prompt, tool docstrings or tool results. The brain may ask for a tale with a plain instruction ("Tell a short tale about ..."); the voice writes the tale.
+- **The voice sees only the `say` message.** `pirate_line` gets the message plus Matey's earlier lines this turn, never the user's request. Given the whole request, the voice reacted to parts not done yet ("shall I make the list?") and repeated the same hook in every line. The brain makes each message self-contained instead.
 - **Different models for different roles.** `BRAIN_MODEL` (planning, tool use) and `VOICE_MODEL` (cheap, fast rewriting) are configured separately. Don't merge them.
 - **No persistence in v0.x, by design.** All state is in memory per WebSocket connection. Refreshing the page starts fresh. Don't add a database or file storage unless asked.
 - **No user editing of windows in v0.x.** Windows are draggable only. The agent is the only writer.

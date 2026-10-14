@@ -26,10 +26,14 @@ def build_voice_agent(model=None) -> Agent:
     )
 
 
-async def pirate_line(voice_agent: Agent, captain_said: str, message: str, already_said: list[str]) -> str:
-    """Run the voice agent once and return Matey's line."""
-    parts = [f"Captain's request: {captain_said}", f"What was done: {message}"]
+async def pirate_line(voice_agent: Agent, message: str, already_said: list[str]) -> str:
+    """Run the voice agent once and return Matey's line.
+
+    The voice sees only this message and its own earlier lines, never the
+    user's whole request, so it can't react to work that isn't done yet.
+    """
+    parts = [f"Tell the captain: {message}"]
     if already_said:
-        parts.append("Already said this turn:\n" + "\n".join(f"- {s}" for s in already_said))
+        parts.append("Your earlier lines this turn:\n" + "\n".join(f"- {s}" for s in already_said))
     result = await Runner.run(voice_agent, "\n\n".join(parts), max_turns=1)
     return str(result.final_output).strip()

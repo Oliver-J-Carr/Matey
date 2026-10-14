@@ -124,5 +124,5 @@ class Conversation:
         if self.ctx.spoken_this_turn or not final or final.lower().strip(". ") == "done":
             return
         await self.ctx.activity("agent", "↪️ Brain replied without say; routing through the voice", final)
-        line = await pirate_line(self.ctx.voice_agent, self.ctx.user_message, final, [])
+        line = await pirate_line(self.ctx.voice_agent, final, [])
         await self.ctx.deliver_line(line, final)
