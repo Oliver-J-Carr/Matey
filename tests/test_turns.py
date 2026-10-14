@@ -227,6 +227,56 @@ def test_with_tts_every_line_carries_its_audio():
     assert [base64.b64decode(e["audio"]) for e in says] == [b"mp3:" + v.encode() for v in voice]
 
 
+@pytest.mark.parametrize("line, shown", [
+    ("[laughs] Pears stowed!", "Pears stowed!"),
+    ("Pears [chuckles] stowed!", "Pears stowed!"),
+    ("Pears stowed [laughs harder].", "Pears stowed."),
+    ("[sighs], aye. [sings] Yo ho!", "aye. Yo ho!"),
+    ("No tags here, cap'n.", "No tags here, cap'n."),
+    ("[squints with his one good eye, tugging at his beard] Aye.", "Aye."),
+])
+def test_strip_tags(line, shown):
+    from app.voice import strip_tags
+
+    assert strip_tags(line) == shown
+
+
+def test_made_up_tags_are_dropped_and_known_ones_kept():
+    from app.voice import keep_known_tags
+
+    line = ("[squints with his one good eye, tugging at his beard] Deleted the Shopping List, aye. "
+            "[clears throat] It's gone. [Laughs] [dramatic pause]")
+    assert keep_known_tags(line) == "Deleted the Shopping List, aye. [clears throat] It's gone. [Laughs]"
+
+
+def test_voice_prompt_lists_exactly_the_allowed_tags():
+    import re
+
+    from app.prompts import VOICE_PROMPT
+    from app.voice import AUDIO_TAGS
+
+    assert set(re.findall(r"\[([^\[\]\n]+)\]", VOICE_PROMPT)) == AUDIO_TAGS
+
+
+def test_audio_tags_reach_tts_and_feed_but_not_the_bubble():
+    line = "[laughs] Pears stowed! [sings] Yo ho, a pear for me!"
+    made_up = "[tugs at his beard] " + line  # never spoken, shown or logged
+    brain = [
+        [_call("say", {"message": "Added pears."}, "c1")],
+        [assistant_message("done")],
+    ]
+    convo, events = run_turns(brain, [made_up], ["add pears"], tts=FakeTTS())
+    say = next(e for e in events if e["type"] == "say")
+    assert say["text"] == "Pears stowed! Yo ho, a pear for me!"
+    assert base64.b64decode(say["audio"]) == b"mp3:" + line.encode()
+    result = next(e["result"] for e in events if e.get("key") == "c1" and "result" in e)
+    assert result == line
+    # The brain is still told only that the line was delivered, never the pirate line.
+    outputs = [i for i in convo.brain.model.calls[-1].input if i.get("type") == "function_call_output"]
+    assert outputs[-1]["output"] == "Delivered to the user."
+    assert convo.ctx.said_by_call == {}
+
+
 def test_tts_failure_still_shows_the_line():
     brain = [
         [_call("say", {"message": "Added pears."}, "c1")],
@@ -268,10 +318,10 @@ def test_elevenlabs_request_sends_the_full_voice_settings():
         sent.append(request)
         return httpx.Response(200, content=b"ID3fake", headers={"content-type": "audio/mpeg"})
 
-    async def go(speed):
-        tts = ElevenLabsTTS("test-key", "voice-x", "model-y", speed, stability=0.6, similarity=0.9,
+    async def go(speed, model="model-y", text="Ahoy!"):
+        tts = ElevenLabsTTS("test-key", "voice-x", model, speed, stability=0.6, similarity=0.9,
                             httpx_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
-        return await tts.synthesize("Ahoy!")
+        return await tts.synthesize(text)
 
     assert asyncio.run(go(1.1)) == b"ID3fake"
     body = json.loads(sent[0].content)
@@ -283,6 +333,11 @@ def test_elevenlabs_request_sends_the_full_voice_settings():
 
     asyncio.run(go(1.0))  # normal speed still pins the rest, so the accent can't drift
     assert json.loads(sent[1].content)["voice_settings"]["similarity_boost"] == 0.9
+
+    # Audio tags go to v3/v4 models as-is; older models would read them aloud.
+    asyncio.run(go(1.0, "eleven_v4_turbo", "[laughs] Ahoy!"))
+    asyncio.run(go(1.0, "eleven_flash_v2_5", "[laughs] Ahoy!"))
+    assert [json.loads(r.content)["text"] for r in sent[2:]] == ["[laughs] Ahoy!", "Ahoy!"]
 
 
 def test_spoken_request_is_transcribed_then_run_as_a_turn():

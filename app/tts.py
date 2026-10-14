@@ -8,6 +8,7 @@ the audio.)
 from __future__ import annotations
 
 from .config import settings
+from .voice import strip_tags
 
 OUTPUT_FORMAT = "mp3_44100_128"
 TIMEOUT_SECONDS = 15
@@ -31,6 +32,11 @@ class ElevenLabsTTS:
     def label(self) -> str:
         return f"ElevenLabs {self.model}"
 
+    @property
+    def supports_tags(self) -> bool:
+        """Eleven v3 and v4 models act on audio tags; older ones read them aloud."""
+        return self.model.startswith(("eleven_v3", "eleven_v4"))
+
     async def synthesize(self, text: str) -> bytes:
         """Return the line as MP3 bytes. Raises on API or network errors."""
         from elevenlabs import VoiceSettings
@@ -47,7 +53,7 @@ class ElevenLabsTTS:
         chunks = [
             chunk async for chunk in self.client.text_to_speech.convert(
                 voice_id=self.voice_id,
-                text=text,
+                text=text if self.supports_tags else strip_tags(text),
                 model_id=self.model,
                 output_format=OUTPUT_FORMAT,
                 voice_settings=voice_settings,

@@ -294,7 +294,7 @@ function feedEvent(e) {
   }
   li.dataset.kind = e.kind;
   li.dataset.status = e.status ?? "done";
-  if (e.result) li.append(detailsBlock("Result", e.result));
+  if (e.result) li.append(detailsBlock(e.tool === "say" ? "Matey said" : "Result", e.result));
   if (isNew && !feedOpen) {
     unread += 1;
     const badge = $("feed-badge");

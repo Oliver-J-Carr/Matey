@@ -78,6 +78,7 @@ docker image prune
 - **Two workspace views, not one live snapshot.** The brain sees the workspace frozen at the start of the turn plus a log of changes it made this turn (`changes_this_turn`). A single live snapshot made the model think items it had just added "already existed". Don't revert to a live snapshot.
 - **Tracing.** Each user turn is wrapped in `with trace(...)` with `group_id` set to the conversation id. Voice-agent runs nest inside the same trace. Keep this when changing `conversation.py`. `OPENAI_AGENTS_DISABLE_TRACING=true` turns it off.
 - **Spoken voice is optional.** With no `ELEVENLABS_API_KEY`, `build_tts()` returns `None` and nothing ElevenLabs-related runs. Every `say` event goes through `MateyContext.deliver_line`, which adds audio when TTS is on and falls back to text only if TTS fails.
+- **Audio tags come from the voice step.** The voice agent writes ElevenLabs tags such as `[laughs]` or `[sings]` into its lines. Only tags in `AUDIO_TAGS` (`voice.py`) survive; `pirate_line` drops made-up ones such as stage directions. Keep that set and the list in `voice.md` identical (a test checks). `deliver_line` strips them from the bubble text (`strip_tags` in `voice.py`), and TTS keeps them, but only for Eleven v3/v4 models (`ElevenLabsTTS.supports_tags`). Older models get them stripped too. The activity feed shows the full tagged line through `said_by_call`, while the brain's `say` result stays "Delivered to the user." so it never sees the persona.
 - **Voice input is optional too.** With no key, `build_stt()` returns `None`, `hello.transcription` is `null` and the browser hides the mic. A recording is transcribed by `Conversation.handle_voice_message`, then runs through `handle_user_message` like typed text, so the brain never knows the request was spoken.
 - **The browser paces speech.** `app.js` queues lines and shows one at a time: until its audio ends, or for a minimum reading time when there is no audio. Audio plays through one shared Web Audio context, woken on Send and kept running while Matey works. A fresh `<audio>` element per line made the first line fade in as the output device woke from idle.
 - **Batch list edits.** `add_list_items` and `remove_list_items` take lists, so one call per list, never one per item.
@@ -115,9 +116,9 @@ docker image prune
   - `hello`: version, model names, `speech` (the TTS label, or `null` when the voice is off) and `transcription` (the STT label, or `null` when voice input is off).
   - `transcript`: `text` heard in a `voice_message`, sent before that turn starts.
   - `status`: `state` of `thinking` or `idle`.
-  - `say`: `text` (Matey's line), `plain` (the brain's message) and, when the voice is on, `audio` (base64 MP3).
+  - `say`: `text` (Matey's line with audio tags removed), `plain` (the brain's message) and, when the voice is on, `audio` (base64 MP3).
   - `ui`: `op` of `upsert` (with `component`) or `delete` (with `component_id`).
-  - `activity`: feed entries. Tool entries share a `key` (the tool call id) and go from `running` to `done` or `error`.
+  - `activity`: feed entries. Tool entries share a `key` (the tool call id) and go from `running` to `done` or `error`. A `say` entry's `result` is Matey's full line, audio tags included.
   - `error`: a short error message.
   - `turn_end`: re-enables the input box.
 - Changing an event's shape means updating `app.js` and the tests in the same change.

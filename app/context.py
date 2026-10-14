@@ -16,6 +16,7 @@ from typing import Any, Awaitable, Callable
 from agents import custom_span
 
 from .tts import describe_error
+from .voice import strip_tags
 from .workspace import Workspace
 
 # A function that pushes one JSON event down the WebSocket to the browser.
@@ -33,6 +34,8 @@ class MateyContext:
     user_message: str = ""
     # Matey's lines spoken this turn (via say), so the voice avoids repeats.
     spoken_this_turn: list[str] = field(default_factory=list)
+    # say tool call id -> Matey's full line (with audio tags), for the activity feed.
+    said_by_call: dict[str, str] = field(default_factory=dict)
     # The workspace as it was when the user sent this message (frozen).
     turn_start_snapshot: str = ""
     # What the brain's tools changed during this turn, in order.
@@ -58,8 +61,9 @@ class MateyContext:
 
     async def deliver_line(self, line: str, plain: str) -> None:
         """Send one of Matey's lines to the browser, with audio if TTS is on.
-        Every say event goes through here."""
-        event = {"type": "say", "text": line, "plain": plain}
+        Every say event goes through here. The bubble gets the line without
+        audio tags; the spoken audio keeps them."""
+        event = {"type": "say", "text": strip_tags(line), "plain": plain}
         if self.tts:
             try:
                 with custom_span("ElevenLabs TTS", data={"model": self.tts.model, "chars": len(line)}):

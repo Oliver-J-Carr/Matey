@@ -14,7 +14,7 @@ It's a proof of concept for agent behaviour: planning, tool use, several actions
 - **Several actions in one request.** "Called Jane back, add pears" adds the pears *and* removes the Jane note, with a reply for each.
 - **Replying is a tool.** The agent decides when to speak, so it can give progress updates mid-task.
 - **Persona kept separate.** A planning agent does the work in plain language. A separate voice agent turns each message into Matey's pirate speech.
-- **Spoken replies (optional).** With an ElevenLabs API key, every line Matey says is read aloud in a pirate voice. Lines play one at a time, each finishing before the next appears. Without a key, replies are text only and each line stays on screen long enough to read.
+- **Spoken replies (optional).** With an ElevenLabs API key, every line Matey says is read aloud in a pirate voice, with laughs, sighs, whispers and the odd sung shanty. These come from ElevenLabs audio tags, which are hidden from the on-screen text but shown in the activity panel. Lines play one at a time, each finishing before the next appears. Without a key, replies are text only and each line stays on screen long enough to read.
 - **Spoken requests (optional).** With the same ElevenLabs key, a microphone button appears next to the message box. Click it, say what you want, then click again. Matey transcribes the recording, shows what he heard and gets to work. Recordings stop on their own after 30 seconds.
 - **Live activity panel.** A collapsible feed with an unread badge shows every agent step and tool call as it happens.
 - **Animated pixel pirate.** He bobs while idle, ponders while working and talks when replying.
@@ -67,7 +67,7 @@ To run the tests: `python3 -m venv .venv && . .venv/bin/activate && pip install 
 | `OPENAI_AGENTS_DISABLE_TRACING` | No | Set to `true` to stop sending traces to OpenAI |
 | `ELEVENLABS_API_KEY` | No | Turns on Matey's spoken voice and the microphone for spoken requests. Leave blank for text only |
 | `ELEVENLABS_VOICE_ID` | No | ElevenLabs voice to use. Defaults to Pirate Marshal (`PPzYpIqttlTYA83688JI`) |
-| `ELEVENLABS_MODEL` | No | ElevenLabs text-to-speech model. Defaults to `eleven_v4_turbo` |
+| `ELEVENLABS_MODEL` | No | ElevenLabs text-to-speech model. Defaults to `eleven_v4_turbo`. Audio tags (laughing, singing) need an Eleven v3 or v4 model; other models get them removed |
 | `ELEVENLABS_SPEED` | No | Matey's speaking speed, from `0.7` (slower) to `1.2` (faster). `1.0` is normal. Defaults to `1.1` |
 | `ELEVENLABS_STABILITY` | No | How consistent Matey's delivery is from line to line, `0.0` to `1.0`. Higher is steadier but can sound flat. Defaults to `0.6` |
 | `ELEVENLABS_SIMILARITY` | No | How closely each line sticks to the pirate voice, `0.0` to `1.0`. Defaults to `0.9` |

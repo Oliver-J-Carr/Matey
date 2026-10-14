@@ -157,6 +157,7 @@ async def say(ctx: Ctx, message: str) -> str:
             await c.activity("error", "Voice layer failed, sending plain text", repr(exc))
             line = message
         c.spoken_this_turn.append(line)
+        c.said_by_call[ctx.tool_call_id] = line  # shown in the activity feed
         await c.deliver_line(line, message)
     return "Delivered to the user."
 

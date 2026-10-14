@@ -80,11 +80,13 @@ class ActivityHooks(RunHooks[MateyContext]):
 
     async def on_tool_end(self, context, agent, tool, result) -> None:
         text = str(result)
+        key = getattr(context, "tool_call_id", None)
+        # For say, show Matey's actual line (tags and all), not "Delivered to the user."
+        shown = context.context.said_by_call.pop(key, text) if tool.name == "say" else text
         await context.context.emit(
             {"type": "activity", "kind": "tool",
              "status": "error" if text.startswith("Error") else "done",
-             "key": getattr(context, "tool_call_id", None),
-             "tool": tool.name, "result": text}
+             "key": key, "tool": tool.name, "result": shown}
         )
 
     async def on_agent_end(self, context, agent, output) -> None:
